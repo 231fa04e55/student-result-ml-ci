@@ -46,3 +46,14 @@ jobs:
             student_results.csv
             student_result_model.pkl
             metrics.json
+
+      - name: Upload ML Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-result-ml-artifacts
+          path: |
+            student_result_model.pkl
+            metrics.json
+            student_results.csv
+          if-no-files-found: error
+          retention-days: 30
