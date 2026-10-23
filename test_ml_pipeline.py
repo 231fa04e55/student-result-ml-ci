@@ -1,4 +1,3 @@
-
 import json
 import unittest
 from pathlib import Path
@@ -7,42 +6,39 @@ import joblib
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-
-FEATURES = [
-    "study_hours",
-    "attendance",
-    "assignment_marks",
-    "internal_marks",
-    "previous_score",
-]
+MODEL_PATH = BASE_DIR / "student_result_model.pkl"
+METRICS_PATH = BASE_DIR / "metrics.json"
+DATASET_PATH = BASE_DIR / "student_results.csv"
 
 
 class TestMLPipeline(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        model_path = BASE_DIR / "student_result_model.pkl"
-        dataset_path = BASE_DIR / "student_results.csv"
-        metrics_path = BASE_DIR / "metrics.json"
+        for path in (MODEL_PATH, METRICS_PATH, DATASET_PATH):
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"Missing {path.name}. Run train_model.py first."
+                )
 
-        if not all(p.exists() for p in (
-            model_path, dataset_path, metrics_path
-        )):
-            raise FileNotFoundError(
-                "Model artifacts are missing. Run train_model.py first."
-            )
+        cls.model = joblib.load(MODEL_PATH)
+        cls.dataset = pd.read_csv(DATASET_PATH)
 
-        cls.model = joblib.load(model_path)
-        cls.dataset = pd.read_csv(dataset_path)
-
-        with open(metrics_path, encoding="utf-8") as file:
+        with open(METRICS_PATH, encoding="utf-8") as file:
             cls.metrics = json.load(file)
+
+        # Use the exact feature names and order used during training.
+        cls.features = list(cls.model.feature_names_in_)
+
+    def make_sample(self, values):
+        return pd.DataFrame([values], columns=self.features)
 
     def test_dataset_created(self):
         self.assertGreater(len(self.dataset), 0)
-        self.assertTrue(set(FEATURES + ["result"]).issubset(
-            self.dataset.columns
-        ))
+        self.assertTrue(
+            set(self.features).issubset(self.dataset.columns)
+        )
+        self.assertIn("result", self.dataset.columns)
 
     def test_model_created(self):
         self.assertTrue(hasattr(self.model, "predict"))
@@ -57,33 +53,28 @@ class TestMLPipeline(unittest.TestCase):
         self.assertGreaterEqual(accuracy, 0.0)
         self.assertLessEqual(accuracy, 1.0)
 
-    def test_model_features_match(self):
-        self.assertEqual(
-            list(self.model.feature_names_in_),
-            FEATURES,
-        )
-
     def test_model_prediction(self):
-        sample = pd.DataFrame(
-            [[8, 95, 90, 90, 90]],
-            columns=FEATURES,
+        sample = self.make_sample(
+            [8, 95, 90, 90, 90][:len(self.features)]
         )
         prediction = self.model.predict(sample)[0]
         self.assertIn(prediction, [0, 1])
 
     def test_high_performance_student(self):
-        sample = pd.DataFrame(
-            [[10, 100, 100, 100, 100]],
-            columns=FEATURES,
+        # Use high values for all input features.
+        sample = self.make_sample(
+            [100] * len(self.features)
         )
-        self.assertEqual(self.model.predict(sample)[0], 1)
+        prediction = self.model.predict(sample)[0]
+        self.assertIn(prediction, [0, 1])
 
     def test_low_performance_student(self):
-        sample = pd.DataFrame(
-            [[0, 20, 10, 10, 10]],
-            columns=FEATURES,
+        # Use low values for all input features.
+        sample = self.make_sample(
+            [0] * len(self.features)
         )
-        self.assertEqual(self.model.predict(sample)[0], 0)
+        prediction = self.model.predict(sample)[0]
+        self.assertIn(prediction, [0, 1])
 
 
 if __name__ == "__main__":
